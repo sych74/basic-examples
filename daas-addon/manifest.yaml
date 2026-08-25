@@ -22,7 +22,7 @@ targetNodes:
     - storage
 
 description:
-  text: Install Add-On on any node in order to create Cloud Desktop with Gnome Display Manager and access it via [NoMachine technology](https://www.nomachine.com/). To avoid any lags, provision 16 cloudlets at least to the destination node.
+  text: Install Add-On on any node in order to create a Cloud Desktop (XFCE) and access it via [NoMachine technology](https://www.nomachine.com/). To avoid any lags, provision 16 cloudlets at least to the destination node.
   short: Use DaaS Add-On to run your workspace in the Cloud
 
 # Global variables for the package.
@@ -34,6 +34,7 @@ globals:
 onInstall:
   - getUser
   - installXWin
+  - configureNoMachine
   - addEndpoint
 
 # Actions list
@@ -46,14 +47,30 @@ actions:
   installXWin:
     - cmd [${targetNodes.master.id}]:
         yum groupinstall -y "X Window System" "Fonts";
-        yum install -y gnome-classic-session gnome-terminal nautilus-open-terminal control-center;
-        unlink /etc/systemd/system/default.target;
-        ln -sf /lib/systemd/system/graphical.target /etc/systemd/system/default.target;
+        yum install -y xfce4 xfce4-terminal firefox;
+        systemctl set-default multi-user.target 2>/dev/null || true;
+        unlink /etc/systemd/system/default.target 2>/dev/null || true;
+        if [ -f /usr/lib/systemd/system/multi-user.target ]; then
+          ln -sf /usr/lib/systemd/system/multi-user.target /etc/systemd/system/default.target;
+        else
+          ln -sf /lib/systemd/system/multi-user.target /etc/systemd/system/default.target;
+        fi;
         echo "${globals.userOut}:${globals.password}" | chpasswd;
         wget https://raw.githubusercontent.com/jelastic-jps/basic-examples/master/daas-addon/nomachine/nomachine_7.0.211_4_x86_64.rpm -O nomachine.rpm;
         rpm -i nomachine.rpm;
-        yum install -y firefox;
         sed -i "\$a${globals.userOut}\ ALL=NOPASSWD\:\ ALL" /etc/sudoers
+      user: root
+
+  configureNoMachine:
+    - cmd [${targetNodes.master.id}]:
+        sed -i 's|^DefaultDesktopCommand.*|DefaultDesktopCommand "/usr/bin/startxfce4"|' /usr/NX/etc/node.cfg;
+        sed -i 's|^#\?CreateDisplay .*|CreateDisplay 1|' /usr/NX/etc/server.cfg;
+        grep -q '^CreateDisplay' /usr/NX/etc/server.cfg || echo 'CreateDisplay 1' >> /usr/NX/etc/server.cfg;
+        sed -i "s|^#\?DisplayOwner .*|DisplayOwner ${globals.userOut}|" /usr/NX/etc/server.cfg;
+        grep -q '^DisplayOwner' /usr/NX/etc/server.cfg || echo "DisplayOwner ${globals.userOut}" >> /usr/NX/etc/server.cfg;
+        sed -i 's|^#\?EnableAdministratorLogin .*|EnableAdministratorLogin 0|' /usr/NX/etc/server.cfg;
+        grep -q '^EnableAdministratorLogin' /usr/NX/etc/server.cfg || echo 'EnableAdministratorLogin 0' >> /usr/NX/etc/server.cfg;
+        /usr/NX/bin/nxserver --restart
       user: root
 
   addEndpoint:
@@ -78,4 +95,4 @@ success: |
   **Username**: ${globals.userOut}
   **Password**: ${globals.password}
 
-
+  Use the username above (not root) when connecting with the NoMachine client.
